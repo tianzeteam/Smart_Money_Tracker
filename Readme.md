@@ -99,8 +99,7 @@ smart-money-tracker/
         │   └── logger.test.ts
         └── index.test.ts  # 入口文件测试
 ```
-## 技术支持
-- 交流群：[Buff社区](https://t.me/chainbuff)
+
 
 ## 免责声明
 本项目仅供学习和研究 Solana 链上交易行为，不用于任何商业用途。请遵守当地法律法规，并注意保护个人隐私和数据安全。
