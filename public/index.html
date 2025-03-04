@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能钱包地址管理</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 2rem;
+            background-color: #f8f9fa;
+        }
+        .card {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+        }
+        .address-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .address-item:last-child {
+            border-bottom: none;
+        }
+        .address-text {
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .btn-group-sm > .btn {
+            margin-left: 0.25rem;
+        }
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .status-connected {
+            background-color: #28a745;
+        }
+        .status-disconnected {
+            background-color: #dc3545;
+        }
+        /* 交易数据样式 */
+        .transaction-card {
+            border-left: 4px solid #007bff;
+            margin-bottom: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .transaction-card.buy {
+            border-left-color: #28a745;
+        }
+        .transaction-card.sell {
+            border-left-color: #dc3545;
+        }
+        .transaction-header {
+            padding: 10px 15px;
+            border-bottom: 1px solid #e9ecef;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+        }
+        .transaction-body {
+            padding: 10px 15px;
+        }
+        .transaction-item {
+            margin-bottom: 5px;
+            display: flex;
+        }
+        .transaction-label {
+            font-weight: 500;
+            min-width: 100px;
+        }
+        .transaction-value {
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-10">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h3 class="mb-0">智能钱包地址管理</h3>
+                        <div>
+                            <span id="connection-status" class="status-indicator status-disconnected"></span>
+                            <span id="status-text">未连接</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="add-address-form" class="mb-4">
+                            <div class="input-group">
+                                <input type="text" id="new-address" class="form-control" placeholder="输入Solana钱包地址" required>
+                                <button type="submit" class="btn btn-primary">添加地址</button>
+                            </div>
+                            <div class="form-text">地址格式应为Solana有效地址，例如：orcACRJYTFjTeo2pV8TfYRTpmqfoYgbVi9GeANXTCc8</div>
+                        </form>
+
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h5 class="mb-0">监控地址列表</h5>
+                            </div>
+                            <div id="address-list" class="list-group list-group-flush">
+                                <!-- 地址列表将通过JavaScript动态生成 -->
+                                <div class="address-item text-center text-muted">
+                                    <em>加载中...</em>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 添加交易数据显示区域 -->
+                <div class="card mt-4">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">实时交易数据</h5>
+                        <button id="clear-transactions" class="btn btn-sm btn-outline-secondary">清空</button>
+                    </div>
+                    <div class="card-body">
+                        <div id="transaction-container" class="overflow-auto" style="max-height: 400px;">
+                            <div id="no-transactions" class="text-center text-muted py-3">
+                                <em>暂无交易数据</em>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑地址模态框 -->
+    <div class="modal fade" id="edit-address-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">编辑地址</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="edit-address-form">
+                        <input type="hidden" id="old-address">
+                        <div class="mb-3">
+                            <label for="updated-address" class="form-label">新地址</label>
+                            <input type="text" class="form-control" id="updated-address" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="save-address">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // WebSocket连接
+        let socket;
+        let editModal;
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初始化Bootstrap模态框
+            editModal = new bootstrap.Modal(document.getElementById('edit-address-modal'));
+            
+            // 连接WebSocket
+            connectWebSocket();
+            
+            // 设置表单提交事件
+            document.getElementById('add-address-form').addEventListener('submit', addAddress);
+            
+            // 设置编辑保存按钮事件
+            document.getElementById('save-address').addEventListener('click', updateAddress);
+            
+            // 设置清空交易按钮事件
+            document.getElementById('clear-transactions').addEventListener('click', clearTransactions);
+        });
+
+        // 连接WebSocket
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = () => {
+                updateConnectionStatus(true);
+            };
+            
+            socket.onclose = () => {
+                updateConnectionStatus(false);
+                // 尝试重新连接
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            socket.onerror = (error) => {
+                console.error('WebSocket错误:', error);
+                updateConnectionStatus(false);
+            };
+            
+            socket.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                if (message.type === 'addresses') {
+                    renderAddressList(message.data);
+                } else if (message.type === 'transaction') {
+                    addTransaction(message.data);
+                }
+            };
+        }
+
+        // 更新连接状态指示器
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('connection-status');
+            const statusText = document.getElementById('status-text');
+            
+            if (connected) {
+                indicator.classList.remove('status-disconnected');
+                indicator.classList.add('status-connected');
+                statusText.textContent = '已连接';
+            } else {
+                indicator.classList.remove('status-connected');
+                indicator.classList.add('status-disconnected');
+                statusText.textContent = '未连接';
+            }
+        }
+
+        // 渲染地址列表
+        function renderAddressList(addresses) {
+            const addressList = document.getElementById('address-list');
+            
+            if (addresses.length === 0) {
+                addressList.innerHTML = `
+                    <div class="address-item text-center text-muted">
+                        <em>暂无监控地址</em>
+                    </div>
+                `;
+                return;
+            }
+            
+            addressList.innerHTML = addresses.map(address => `
+                <div class="address-item">
+                    <div class="address-text">${address}</div>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary" onclick="openEditModal('${address}')">
+                            编辑
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="deleteAddress('${address}')">
+                            删除
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 添加新地址
+        async function addAddress(event) {
+            event.preventDefault();
+            
+            const input = document.getElementById('new-address');
+            const address = input.value.trim();
+            
+            if (!address) return;
+            
+            try {
+                const response = await fetch('/api/addresses', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ address })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    input.value = '';
+                } else {
+                    alert(`添加失败: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('添加地址错误:', error);
+                alert('添加地址失败，请检查网络连接');
+            }
+        }
+
+        // 删除地址
+        async function deleteAddress(address) {
+            if (!confirm(`确定要删除地址 ${address} 吗？`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/addresses/${address}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (!result.success) {
+                    alert(`删除失败: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('删除地址错误:', error);
+                alert('删除地址失败，请检查网络连接');
+            }
+        }
+
+        // 打开编辑模态框
+        function openEditModal(address) {
+            document.getElementById('old-address').value = address;
+            document.getElementById('updated-address').value = address;
+            editModal.show();
+        }
+
+        // 更新地址
+        async function updateAddress() {
+            const oldAddress = document.getElementById('old-address').value;
+            const newAddress = document.getElementById('updated-address').value.trim();
+            
+            if (!newAddress) return;
+            
+            try {
+                const response = await fetch(`/api/addresses/${oldAddress}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ newAddress })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    editModal.hide();
+                } else {
+                    alert(`更新失败: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('更新地址错误:', error);
+                alert('更新地址失败，请检查网络连接');
+            }
+        }
+
+        // 添加交易数据
+        function addTransaction(transaction) {
+            // 移除"暂无交易数据"的提示
+            const noTransactionsElement = document.getElementById('no-transactions');
+            if (noTransactionsElement) {
+                noTransactionsElement.style.display = 'none';
+            }
+            
+            const container = document.getElementById('transaction-container');
+            
+            // 创建交易卡片
+            const transactionCard = document.createElement('div');
+            transactionCard.className = `transaction-card ${transaction.type === '买入' ? 'buy' : 'sell'}`;
+            
+            // 格式化时间
+            const timestamp = transaction.timestamp 
+                ? new Date(transaction.timestamp).toLocaleString() 
+                : new Date().toLocaleString();
+            
+            // 创建卡片头部
+            const header = document.createElement('div');
+            header.className = 'transaction-header';
+            header.innerHTML = `
+                <span>${transaction.type} 交易</span>
+                <small>${timestamp}</small>
+            `;
+            
+            // 创建卡片主体
+            const body = document.createElement('div');
+            body.className = 'transaction-body';
+            
+            // 添加交易详情
+            const details = [
+                { label: '交易槽位', value: transaction.slot },
+                { label: '交易钱包', value: transaction.wallet },
+                { label: '交易合约', value: transaction.contract },
+                { label: '代币地址', value: transaction.tokenMint },
+                { label: 'SOL数量', value: transaction.solAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) },
+                { label: '代币数量', value: transaction.tokenAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) }
+            ];
+            
+            details.forEach(item => {
+                const detailItem = document.createElement('div');
+                detailItem.className = 'transaction-item';
+                detailItem.innerHTML = `
+                    <div class=\"transaction-label\">${item.label}:</div>
+                    <div class=\"transaction-value\">${item.value}</div>
+                `;
+                body.appendChild(detailItem);
+            });
+            
+            // 组装卡片
+            transactionCard.appendChild(header);
+            transactionCard.appendChild(body);
+            
+            // 添加到容器的顶部
+            container.insertBefore(transactionCard, container.firstChild);
+            
+            // 限制显示的交易数量，避免内存过大
+            const maxTransactions = 50;
+            const transactions = container.getElementsByClassName('transaction-card');
+            if (transactions.length > maxTransactions) {
+                container.removeChild(transactions[transactions.length - 1]);
+            }
+        }
+        
+        // 清空交易数据
+        function clearTransactions() {
+            const container = document.getElementById('transaction-container');
+            container.innerHTML = `
+                <div id=\"no-transactions\" class=\"text-center text-muted py-3\">
+                    <em>暂无交易数据</em>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

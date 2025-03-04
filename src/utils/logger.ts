@@ -8,10 +8,11 @@ export interface TransactionLogData {
     tokenMint: string;
     solAmount: number;
     tokenAmount: number;
+    timestamp: string; // 时间戳字段
 }
 
 export function formatTransactionOutput(data: TransactionLogData): string {
-    return [
+    const lines = [
         '————————————————————————————',
         `交易槽位：${data.slot}`,
         `交易钱包：${data.wallet}`,
@@ -20,6 +21,9 @@ export function formatTransactionOutput(data: TransactionLogData): string {
         `代币地址：${data.tokenMint}`,
         `SOL数量：${formatTokenAmount(Math.abs(data.solAmount))}`,
         `代币数量：${formatTokenAmount(Math.abs(data.tokenAmount))}`,
+        `交易时间：${new Date(data.timestamp).toLocaleString()}`,
         '————————————————————————————\n'
-    ].join('\n');
+    ];
+    
+    return lines.join('\n');
 } 
